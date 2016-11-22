@@ -34,7 +34,7 @@ func findversion(cli *CLI, pkgroot, prefix string) (string, int) {
 		if err != nil {
 			return "", cli.Fatalf("%v", err)
 		}
-		v = branch + hd
+		v += hd
 	}
 
 	return v, ExitCodeOK
