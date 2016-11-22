@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 )
 
 // Exit codes are int values that represent an exit code for a particular error.
@@ -19,6 +20,11 @@ type CLI struct {
 	outStream, errStream io.Writer
 }
 
+func (cli *CLI) Fatalf(format string, a ...interface{}) int {
+	fmt.Fprintf(cli.errStream, "%s: %s\n", Name, fmt.Sprintf(format, a...))
+	return ExitCodeError
+}
+
 // Run invokes the CLI with the given arguments.
 func (cli *CLI) Run(args []string) int {
 	var (
@@ -31,13 +37,14 @@ func (cli *CLI) Run(args []string) int {
 	flags := flag.NewFlagSet(Name, flag.ContinueOnError)
 	flags.SetOutput(cli.errStream)
 
-	flags.StringVar(&prefix, "prefix", "", "Release branch prefix")
-	flags.StringVar(&prefix, "p", "", "Release branch prefix(Short)")
+	flags.StringVar(&prefix, "prefix", "release-branch.", "Release branch prefix")
+	flags.StringVar(&prefix, "p", "release-branch.", "Release branch prefix(Short)")
 
 	flags.BoolVar(&version, "version", false, "Print version information and quit.")
 
 	// Parse commandline flag
-	if err := flags.Parse(args[1:]); err != nil {
+	err := flags.Parse(args[1:])
+	if err != nil {
 		return ExitCodeError
 	}
 
@@ -47,7 +54,18 @@ func (cli *CLI) Run(args []string) int {
 		return ExitCodeOK
 	}
 
-	_ = prefix
+	var pkgroot string
+	if len(os.Args) > 1 {
+		pkgroot = os.Args[1]
+	} else {
+		pkgroot, err = os.Getwd()
+		if err != nil {
+			return ExitCodeError
+		}
+	}
 
-	return ExitCodeOK
+	v, ret := findversion(cli, pkgroot, prefix)
+	fmt.Fprintf(cli.outStream, "%s\n", v)
+
+	return ret
 }
