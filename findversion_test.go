@@ -94,56 +94,81 @@ func TestCurrentBranch(t *testing.T) {
 	}
 }
 
-func TestFindBranchClosestTag(t *testing.T) {
+func TestGitLogOnlyRefNames(t *testing.T) {
 	dir, close, err := tempGitRepo("", "TestFindBranchClosestTag")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer close()
-
-	rb := "release-branch.0.1.0"
-	v := "v0.1.0"
-
-	cmd := exec.Command("git", "checkout", "-b", rb)
+	cmd := exec.Command("git", "checkout", "-b", "release-branch.0.1.0")
 	cmd.Dir = dir
 	_, err = cmd.Output()
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	tag, precise := findBranchClosestTag(dir, rb)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if precise {
-		t.Errorf("no precise expected: %v", precise)
-	}
-	if tag != rb {
-		t.Errorf("expected: %s, but got: %v", rb, tag)
-	}
-
 	tempfile, err := tempGitCommit(dir, "TestFindBranchClosestTag")
 	if err != nil {
 		t.Fatal(err)
 	} else if tempfile != "" {
 		defer os.Remove(tempfile)
 	}
-	cmd = exec.Command("git", "tag", v)
+	cmd = exec.Command("git", "tag", "v1.0.0")
 	cmd.Dir = dir
 	_, err = cmd.Output()
 	if err != nil {
 		t.Fatal(err)
 	}
+	exp := "HEAD -> refs/heads/release-branch.0.1.0, tag: refs/tags/v1.0.0"
 
-	tag, precise = findBranchClosestTag(dir, rb)
+	b, err := gitLogOnlyRefNames(dir, "release-branch.0.1.0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if precise {
-		t.Errorf("no precise expected: %v", precise)
+	got := string(b)
+	if got != exp {
+		t.Errorf("\n- expected: \n%v\n- but got:\n%v", exp, got)
 	}
-	if tag != v {
-		t.Errorf("expected: %v, but got: %v", v, tag)
+
+	tempfile, err = tempGitCommit(dir, "TestFindBranchClosestTag")
+	if err != nil {
+		t.Fatal(err)
+	} else if tempfile != "" {
+		defer os.Remove(tempfile)
+	}
+	cmd = exec.Command("git", "tag", "v1.0.1")
+	cmd.Dir = dir
+	_, err = cmd.Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	exp = "HEAD -> refs/heads/release-branch.0.1.0, tag: refs/tags/v1.0.1\ntag: refs/tags/v1.0.0"
+
+	b, err = gitLogOnlyRefNames(dir, "release-branch.0.1.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got = string(b)
+	if got != exp {
+		t.Errorf("\n- expected: \n%v\n- but got:\n%v", exp, got)
+	}
+}
+
+func TestDetermineClosestTag(t *testing.T) {
+	b := []byte("tag: refs/tags/v1.0.0, refs/remotes/origin/release-branch.1.0, refs/heads/release-branch.1.0\n")
+	tag := determineClosestTag(b)
+	if tag != "v1.0.0" {
+		t.Errorf("expected: v1.0.0, but got: `%v`", tag)
+	}
+
+	b = []byte(`HEAD -> refs/heads/release-branch.1.0, refs/remotes/origin/release-branch.1.0
+
+tag: refs/tags/v1.0.1
+
+
+tag: refs/tags/v1.0.0`)
+	tag = determineClosestTag(b)
+	if tag != "v1.0.1" {
+		t.Errorf("expected: v1.0.1, but got: `%v`", tag)
 	}
 }
 

@@ -24,18 +24,19 @@ func findversion(cli *CLI, pkgroot, prefix string) (string, int) {
 		return "", cli.Fatalf("%v", err)
 	}
 
-	var precise bool
+	tag := "devel"
 	if strings.HasPrefix(branch, prefix) {
-		v, precise = findBranchClosestTag(pkgroot, branch)
+		tag = findBranchClosestTag(pkgroot, branch)
+		if tag == "" {
+			tag = branch
+		}
 	}
 
-	if !precise {
-		hd, err := getHashAndDate(pkgroot)
-		if err != nil {
-			return "", cli.Fatalf("%v", err)
-		}
-		v += hd
+	hd, err := getHashAndDate(pkgroot)
+	if err != nil {
+		return "", cli.Fatalf("%v", err)
 	}
+	v = tag + hd
 
 	return v, ExitCodeOK
 }
@@ -82,39 +83,28 @@ func currentBranch(dir string) (string, error) {
 	return chomp(string(out)), nil
 }
 
-func findBranchClosestTag(dir, branch string) (tag string, precise bool) {
-	cmd := exec.Command("git", "log", "--decorate=full", "--format=format:%d", "master.."+branch)
+func gitLogOnlyRefNames(dir, branch string) ([]byte, error) {
+	cmd := exec.Command("git", "log", "--decorate=full", "--format=format:%D", "master.."+branch)
 	cmd.Dir = dir
-	out, err := cmd.Output()
-	if err != nil {
-		return
-	}
+	return cmd.Output()
+}
 
-	tag = branch
-	for _, line := range strings.SplitAfter(string(out), "\n") {
-		// Each line is either blank, or looks like
-		//	  (tag: refs/tags/0.1.0, refs/remotes/origin/release-branch.0.1.0, refs/heads/release-branch.0.1.0)
-		// We need to find an element starting with refs/tags/.
-		i := strings.Index(line, " refs/tags/")
-		if i < 0 {
-			continue
+func determineClosestTag(b []byte) string {
+	for _, line := range strings.Split(string(b), "\n") {
+		for _, name := range strings.Split(line, ",") {
+			name = strings.Trim(name, " ")
+			i := strings.Index(name, "refs/tags/")
+			if i > 0 {
+				return name[i+len("refs/tags/"):]
+			}
 		}
-		i += len(" refs/tags/")
-		// The tag name ends at a comma or paren (prefer the first).
-		j := strings.Index(line[i:], ",")
-		if j < 0 {
-			j = strings.Index(line[i:], ")")
-		}
-		if j < 0 {
-			continue // malformed line; ignore it
-		}
-		tag = line[i : i+j]
-		if i == 0 {
-			precise = true // tag denotes HEAD
-		}
-		break
 	}
-	return
+	return ""
+}
+
+func findBranchClosestTag(dir, branch string) string {
+	b, _ := gitLogOnlyRefNames(dir, branch)
+	return determineClosestTag(b)
 }
 
 func getHashAndDate(dir string) (string, error) {
